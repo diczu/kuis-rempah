@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Detektif Jalur Rempah</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Merriweather', 'serif'],
+                    },
+                    colors: {
+                        parchment: '#fdf6e3',
+                        ink: '#2c1e16',
+                        'historical-red': '#8b261d',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #e9e3d3;
+            background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.15' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
+            color: #2c1e16;
+            touch-action: manipulation; /* Prevent double-tap zoom on mobile */
+        }
+        
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .tile {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .tile:active {
+            transform: scale(0.95);
+        }
+        .tile.selected {
+            ring: 4px;
+            ring-color: #8b261d;
+            border-color: #8b261d;
+            background-color: #fee2e2;
+            transform: scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+
+        /* Status Benar & Salah */
+        .tile-correct {
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.7) !important;
+            border-color: #22c55e !important;
+            background-color: #dcfce7 !important;
+            color: #14532d !important;
+            pointer-events: none; /* Kunci kepingan agar tidak bisa dipindah lagi */
+        }
+        .tile-wrong {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.8) !important;
+            border-color: #ef4444 !important;
+            background-color: #fee2e2 !important;
+            color: #7f1d1d !important;
+        }
+
+        /* Animasi Getar untuk Salah */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-6px) rotate(-2deg); }
+            40% { transform: translateX(6px) rotate(2deg); }
+            60% { transform: translateX(-6px) rotate(-2deg); }
+            80% { transform: translateX(6px) rotate(2deg); }
+        }
+        .animate-shake {
+            animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        .grid-slot {
+            border: 2px dashed #a8a29e;
+            background-color: rgba(255,255,255,0.4);
+            transition: background-color 0.2s;
+        }
+        .grid-slot.highlight {
+            background-color: rgba(139, 38, 29, 0.1);
+            border-color: #8b261d;
+        }
+
+        /* Glassmorphism modal */
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.8) translateY(20px); opacity: 0; }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .animate-pop {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+</head>
+<body class="h-screen w-full flex flex-col font-sans overflow-hidden">
+
+    <!-- Kontainer utama dilebarkan dari max-w-2xl menjadi max-w-5xl (lebih luas dan lega) -->
+    <main id="gameScreen" class="flex-1 flex flex-col h-full w-full max-w-5xl mx-auto relative shadow-2xl bg-amber-50/50">
+        
+        <!-- Header & Timer -->
+        <header class="bg-amber-900 text-amber-50 p-3 flex justify-between items-center shadow-md z-10">
+            <div>
+                <h2 class="font-serif font-bold text-lg leading-tight">Detektif Jalur Rempah</h2>
+                <p class="text-xs opacity-80">Misi: Matriks Arsip</p>
+            </div>
+            <div class="bg-amber-950 px-3 py-1 rounded-lg border border-amber-700">
+                <span id="timerDisplay" class="font-mono font-bold text-xl">00:00</span>
+            </div>
+        </header>
+
+        <section class="flex-1 p-3 overflow-x-auto hide-scrollbar relative">
+            <!-- Kontainer dalam (Grid) dilebarkan minimal lebarnya -->
+            <div class="min-w-[700px] h-full flex flex-col gap-2">
+                <!-- Header Grid dengan Warna Kategori -->
+                <div class="grid grid-cols-4 gap-3 mb-2 sticky top-0 z-10">
+                    <div class="bg-amber-200 p-3 rounded-lg font-bold text-sm text-center border-2 border-amber-300 text-amber-900 shadow flex items-center justify-center uppercase">Waktu (Kunci)</div>
+                    <div class="bg-green-200 p-3 rounded-lg font-bold text-sm text-center border-2 border-green-400 text-green-900 shadow flex items-center justify-center uppercase">SUBJEK / TOKOH</div>
+                    <div class="bg-blue-200 p-3 rounded-lg font-bold text-sm text-center border-2 border-blue-400 text-blue-900 shadow flex items-center justify-center uppercase">LOKASI SPESIFIK</div>
+                    <div class="bg-purple-200 p-3 rounded-lg font-bold text-sm text-center border-2 border-purple-400 text-purple-900 shadow flex items-center justify-center uppercase">CATATAN / TEMUAN</div>
+                </div>
+
+                <!-- Matrix Rows Generated by JS -->
+                <div id="matrixContainer" class="flex-1 flex flex-col gap-3 pb-2">
+                    <!-- Rows will be injected here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Item Bank (Inventory) -->
+        <section class="bg-stone-200 border-t-4 border-stone-400 p-4 h-56 flex flex-col z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+            <div class="flex justify-between items-center mb-3">
+                <p class="text-sm font-bold text-stone-600 uppercase tracking-wider">Kepingan Arsip (Pilih lalu Letakkan ke Posisi yang Benar)</p>
+                <div class="space-x-2">
+                    <button onclick="resetGrid()" class="px-4 py-2 bg-stone-400 text-white rounded-lg text-sm font-bold shadow hover:bg-stone-500 active:scale-95 transition">Reset Permainan</button>
+                    <!-- Tombol "Cek Matriks" dihapus karena pengecekan sudah real-time -->
+                </div>
+            </div>
+            
+            <div id="itemBank" class="flex-1 overflow-y-auto hide-scrollbar flex flex-wrap content-start gap-3 p-1">
+                <!-- Tiles will be injected here -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Custom Alert Modal (Hidden by default) -->
+    <div id="customModal" class="fixed inset-0 modal-overlay z-[100] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-2xl p-6 text-center shadow-2xl border-2 border-stone-200 transform scale-95 opacity-0 transition-all duration-200" id="modalContent">
+            <div id="modalIcon" class="text-5xl mb-4">⚠️</div>
+            <h3 id="modalTitle" class="text-xl font-bold font-serif mb-2 text-ink">Peringatan</h3>
+            <p id="modalMessage" class="text-stone-600 mb-6 text-sm">Pesan akan tampil di sini.</p>
+            <button onclick="closeModal()" class="w-full bg-historical-red text-white font-bold py-2 px-4 rounded-xl shadow hover:bg-red-800">
+                Mengerti
+            </button>
+        </div>
+    </div>
+
+    <!-- Victory Modal -->
+    <div id="victoryModal" class="fixed inset-0 modal-overlay z-[100] hidden flex items-center justify-center p-4">
+        <div class="bg-parchment w-full max-w-md rounded-2xl p-8 text-center shadow-2xl border-4 border-amber-600 transform scale-95 opacity-0 transition-all duration-200" id="victoryContent">
+            <div class="text-6xl mb-4">🏆</div>
+            <h3 class="text-2xl font-bold font-serif mb-1 text-historical-red">Misi Selesai!</h3>
+            <p class="text-amber-900 font-medium mb-4">Analisis Sejarah Anda Sempurna.</p>
+            
+            <div class="bg-white p-4 rounded-xl border-2 border-amber-200 mb-6 text-left shadow-inner">
+                <p class="text-sm text-stone-500 mb-1">Laporan Misi:</p>
+                <p class="font-bold text-ink text-lg mt-2 text-green-700" id="vicTime">Waktu: 00:00</p>
+            </div>
+
+            <button onclick="location.reload()" class="w-full bg-amber-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:bg-amber-700">
+                Main Lagi
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Game Data Configuration
+        const timeRows = [
+            { id: "row1", label: "1721 SM" },
+            { id: "row2", label: "Abad ke-1" },
+            { id: "row3", label: "Abad ke-14" },
+            { id: "row4", label: "1512 - 1515" }
+        ];
+
+        const columns = ["subjek", "lokasi", "temuan"];
+
+        // Correct Answer Key
+        const correctAnswer = {
+            "row1_subjek": "Artefak Mesopotamia", "row1_lokasi": "Wilayah Suriah", "row1_temuan": "Jambangan Cengkih",
+            "row2_subjek": "Claudius Ptolemaeus", "row2_lokasi": "Pelabuhan Barus", "row2_temuan": "Guide to Geography",
+            "row3_subjek": "Ibnu Batutah", "row3_lokasi": "Pantai Timur Sumatra", "row3_temuan": "Persinggahan Maritim",
+            "row4_subjek": "Tome Pires", "row4_lokasi": "Pelab. Nusantara", "row4_temuan": "Suma Oriental"
+        };
+
+        const allItems = [
+            { text: "Artefak Mesopotamia", type: "subjek" },
+            { text: "Claudius Ptolemaeus", type: "subjek" },
+            { text: "Ibnu Batutah", type: "subjek" },
+            { text: "Tome Pires", type: "subjek" },
+            { text: "Wilayah Suriah", type: "lokasi" },
+            { text: "Pelabuhan Barus", type: "lokasi" },
+            { text: "Pantai Timur Sumatra", type: "lokasi" },
+            { text: "Pelab. Nusantara", type: "lokasi" },
+            { text: "Jambangan Cengkih", type: "temuan" },
+            { text: "Guide to Geography", type: "temuan" },
+            { text: "Persinggahan Maritim", type: "temuan" },
+            { text: "Suma Oriental", type: "temuan" }
+        ];
+
+        // State variables
+        let selectedItem = null; // Holds the DOM element of the currently tapped item
+        let timerInterval;
+        let secondsElapsed = 0;
+        let gameActive = false;
+
+        function initializeUI() {
+            const matrixContainer = document.getElementById('matrixContainer');
+            const itemBank = document.getElementById('itemBank');
+
+            // 1. Build Grid Rows
+            timeRows.forEach(row => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'grid grid-cols-4 gap-3 flex-1 min-h-[60px]';
+                
+                // Time Label (Fixed)
+                const timeLabel = document.createElement('div');
+                timeLabel.className = 'bg-amber-800 text-amber-50 rounded-xl shadow-md flex items-center justify-center p-2 text-sm md:text-base font-bold font-serif text-center border-2 border-amber-900';
+                timeLabel.textContent = row.label;
+                rowDiv.appendChild(timeLabel);
+
+                // 3 Empty Slots
+                columns.forEach(col => {
+                    const slotDiv = document.createElement('div');
+                    slotDiv.className = 'grid-slot rounded-xl flex items-center justify-center p-1 relative';
+                    slotDiv.dataset.row = row.id;
+                    slotDiv.dataset.col = col;
+                    slotDiv.dataset.slotId = `${row.id}_${col}`; // e.g., row1_subjek
+                    
+                    // Slot click handler
+                    slotDiv.onclick = () => handleSlotClick(slotDiv);
+
+                    rowDiv.appendChild(slotDiv);
+                });
+
+                matrixContainer.appendChild(rowDiv);
+            });
+
+            // 2. Build Item Bank (Shuffle first)
+            const shuffledItems = allItems.sort(() => Math.random() - 0.5);
+            shuffledItems.forEach((item, index) => {
+                const tile = createTile(item.text, `item_${index}`, item.type);
+                itemBank.appendChild(tile);
+            });
+        }
+
+        function createTile(text, id, type) {
+            const tile = document.createElement('div');
+            
+            // Assign colors based on type to aid categorization
+            let colorClasses = "bg-white border-stone-300 text-stone-800"; // default
+            if (type === "subjek") colorClasses = "bg-green-100 border-green-400 text-green-900";
+            if (type === "lokasi") colorClasses = "bg-blue-100 border-blue-400 text-blue-900";
+            if (type === "temuan") colorClasses = "bg-purple-100 border-purple-400 text-purple-900";
+
+            // Diubah font size dan padding agar lebih proporsional di kontainer yang lebih luas
+            tile.className = `tile border-2 text-xs md:text-sm font-bold p-2 md:p-3 rounded-lg shadow-sm text-center select-none flex-grow shrink-0 basis-[30%] flex items-center justify-center min-h-[45px] ${colorClasses}`;
+            tile.textContent = text;
+            tile.id = id;
+            tile.dataset.text = text;
+            
+            // Tile click handler
+            tile.onclick = (e) => {
+                e.stopPropagation(); // Prevent triggering container clicks
+                handleTileClick(tile);
+            };
+            return tile;
+        }
+
+        function handleTileClick(tile) {
+            if (!gameActive) return;
+
+            // If a tile is clicked while inside a grid slot, move it back to bank
+            if (tile.parentElement.id !== 'itemBank') {
+                document.getElementById('itemBank').appendChild(tile);
+                clearSelection();
+                return;
+            }
+
+            // If clicking the already selected tile, unselect it
+            if (selectedItem === tile) {
+                clearSelection();
+                return;
+            }
+
+            // Select new tile in bank
+            clearSelection();
+            selectedItem = tile;
+            tile.classList.add('selected', 'ring-4', 'ring-red-600', 'border-red-600');
+            highlightEmptySlots();
+        }
+
+        function handleSlotClick(slot) {
+            if (!gameActive) return;
+
+            // Jika kotak (slot) sudah berisi jawaban yang benar (terkunci), abaikan klik
+            if (slot.children.length > 0 && slot.children[0].classList.contains('tile-correct')) {
+                return;
+            }
+
+            // Jika pengguna mengeklik slot dan ada item yang dipilih dari bank
+            if (selectedItem) {
+                const slotId = slot.dataset.slotId;
+                const itemText = selectedItem.dataset.text;
+                
+                // Cek kebenaran secara langsung (Real-time Validation)
+                const isCorrect = correctAnswer[slotId] === itemText;
+                
+                const currentItem = selectedItem;
+                
+                // Jika slot tidak kosong (namun belum terkunci benar), pindahkan item lama kembali ke bank
+                if (slot.children.length > 0) {
+                    const existingItem = slot.children[0];
+                    document.getElementById('itemBank').appendChild(existingItem);
+                }
+                
+                // Letakkan item yang dipilih ke dalam slot
+                slot.appendChild(currentItem);
+                clearSelection();
+
+                if (isCorrect) {
+                    // JIKA BENAR: Beri efek menyala hijau dan kunci posisi
+                    currentItem.classList.add('tile-correct');
+                    checkVictory(); // Cek apakah seluruh kotak sudah terisi benar
+                } else {
+                    // JIKA SALAH: Beri efek getar merah dan kembalikan ke bank
+                    currentItem.classList.add('tile-wrong', 'animate-shake');
+                    
+                    // Kunci sementara permainan agar animasi selesai (0.8 detik)
+                    gameActive = false;
+                    
+                    setTimeout(() => {
+                        currentItem.classList.remove('tile-wrong', 'animate-shake');
+                        document.getElementById('itemBank').appendChild(currentItem);
+                        gameActive = true;
+                    }, 800);
+                }
+            } 
+            // Jika pengguna mengeklik kotak yang ADA isinya (tapi belum benar), kembalikan ke bank
+            else if (slot.children.length > 0) {
+                const itemToMove = slot.children[0];
+                document.getElementById('itemBank').appendChild(itemToMove);
+            }
+        }
+
+        function clearSelection() {
+            if (selectedItem) {
+                selectedItem.classList.remove('selected', 'ring-4', 'ring-red-600', 'border-red-600');
+                selectedItem = null;
+            }
+            // Remove highlights from slots
+            document.querySelectorAll('.grid-slot').forEach(s => s.classList.remove('highlight'));
+        }
+
+        function highlightEmptySlots() {
+            document.querySelectorAll('.grid-slot').forEach(slot => {
+                // Highlight empty slots to guide the user
+                if (slot.children.length === 0) {
+                    slot.classList.add('highlight');
+                }
+            });
+        }
+
+        function resetGrid() {
+            if(!gameActive) return;
+            const itemBank = document.getElementById('itemBank');
+            // Move all tiles from slots back to bank and clear styles
+            document.querySelectorAll('.grid-slot .tile').forEach(tile => {
+                tile.classList.remove('tile-correct', 'tile-wrong', 'animate-shake');
+                itemBank.appendChild(tile);
+            });
+            clearSelection();
+        }
+
+        function startGame() {
+            // Initialize Grid
+            initializeUI();
+
+            // Start Timer
+            gameActive = true;
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+        
+        // Start game immediately on load
+        window.onload = startGame;
+
+        function updateTimer() {
+            secondsElapsed++;
+            const m = String(Math.floor(secondsElapsed / 60)).padStart(2, '0');
+            const s = String(secondsElapsed % 60).padStart(2, '0');
+            document.getElementById('timerDisplay').textContent = `${m}:${s}`;
+        }
+
+        function checkVictory() {
+            // Hitung berapa kepingan yang sudah berstatus 'tile-correct'
+            const correctCount = document.querySelectorAll('.tile-correct').length;
+            
+            // Jika 12 kepingan sudah benar semua, memicu layar kemenangan
+            if (correctCount === 12) {
+                triggerVictory();
+            }
+        }
+
+        // Custom Modal Controller
+        function showModal(title, message, isVictory = false) {
+            const modal = document.getElementById('customModal');
+            const content = document.getElementById('modalContent');
+            
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = message;
+            
+            modal.classList.remove('hidden');
+            // Trigger animation
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('customModal');
+            const content = document.getElementById('modalContent');
+            
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200); // Wait for transition
+        }
+
+        function triggerVictory() {
+            clearInterval(timerInterval);
+            gameActive = false;
+
+            const time = document.getElementById('timerDisplay').textContent;
+
+            // Populate Victory Modal
+            document.getElementById('vicTime').textContent = `Waktu Penyelesaian: ${time}`;
+
+            const modal = document.getElementById('victoryModal');
+            const content = document.getElementById('victoryContent');
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+            }, 10);
+
+            /* 
+               CATATAN UNTUK PENGEMBANG (GURU):
+               Di titik ini (triggerVictory), Anda bisa menambahkan kode `fetch()` ke 
+               Google Apps Script Web App Anda untuk mencatat skor/waktu siswa 
+               secara otomatis ke Google Sheets.
+               
+               Contoh:
+               fetch('URL_GOOGLE_SCRIPT_ANDA', {
+                   method: 'POST',
+                   mode: 'no-cors', // Penting untuk bypass CORS di Google Scripts
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ nama: name, kelas: cls, waktu: time })
+               });
+            */
+        }
+    </script>
+</body>
+</html>
